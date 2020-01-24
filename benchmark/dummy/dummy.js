@@ -1,23 +1,8 @@
-function saveUserInfo() {
-    let id = retSource(),
-        name = retSource(),
-        age = retSource(),
-        designation = retSource(),
-        dito = id,
-        stream = getStream();
-
-    let userInfo = {
-        'id': id,
-        'name': name,
-        'age': age
-    };
-
-    if (name != '' && age > 10 && designation != '') {
-        sink(userInfo);
+function getInformation() {
+    let input = retSource();
+    let q = 'SELECT * FROM ' + input;
+    let len = 20;
+    if (q.length > len) {
+        let ans = sink(q);
     }
-}
-
-function passUserId() {
-    let id = retSource();
-    sink(id);
 }

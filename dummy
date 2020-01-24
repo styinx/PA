@@ -20,6 +20,9 @@ FUNCTION
           NAME
     VAR
       NAME
+        NAME
+    VAR
+      NAME
         CALL
           NAME
     VAR
@@ -56,6 +59,51 @@ FUNCTION
       NAME
         CALL
           NAME
+    EXPR_RESULT
+      CALL
+        NAME
+        NAME
+
+
+@4
+FUNCTION
+  NAME
+  PARAM_LIST
+  BLOCK
+    VAR
+      NAME
+        MUL
+          MUL
+            NUMBER
+            CALL
+              NAME
+          NUMBER
+    VAR
+      NAME
+        ADD
+          NAME
+          NUMBER
+    VAR
+      NAME
+        NUMBER
+    IF
+      LT
+        NAME
+        NUMBER
+      BLOCK
+        EXPR_RESULT
+          ASSIGN
+            NAME
+            SUB
+              NAME
+              NUMBER
+      BLOCK
+        EXPR_RESULT
+          ASSIGN
+            NAME
+            ADD
+              NAME
+              NUMBER
     EXPR_RESULT
       CALL
         NAME
