@@ -29,7 +29,7 @@
   <description>
     Closure Compiler is a JavaScript optimizing compiler. It parses your
     JavaScript, analyzes it, removes dead code and rewrites and minimizes
-    what's left. It also checks syntax, variable references, and types, and
+    what's left. It also checks syntax, variableDefinition references, and types, and
     warns about common JavaScript pitfalls. It is used in many of Google's
     JavaScript apps, including Gmail, Google Web Search, Google Maps, and
     Google Docs.

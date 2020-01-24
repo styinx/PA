@@ -6,18 +6,20 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="closure-compiler-linter" />
         <module name="closure-compiler-externs" />
+        <module name="closure-compiler-linter" />
+        <module name="closure-compiler (1)" />
         <module name="closure-compiler-unshaded" />
         <module name="closure-compiler-refasterjs" />
+        <module name="closure-compiler (2)" />
         <module name="closure-compiler-gwt" />
-        <module name="closure-compiler" />
       </profile>
     </annotationProcessing>
   </component>
   <component name="JavacSettings">
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
-      <module name="closure-compiler" options="-Xlint:unchecked,deprecation,fallthrough,finally" />
+      <module name="closure-compiler (1)" options="-Xlint:unchecked,deprecation,fallthrough,finally" />
+      <module name="closure-compiler (2)" options="-Xlint:unchecked,deprecation,fallthrough,finally" />
       <module name="closure-compiler-externs" options="-Xlint:unchecked,deprecation,fallthrough,finally" />
       <module name="closure-compiler-gwt" options="-Xlint:unchecked,deprecation,fallthrough,finally" />
       <module name="closure-compiler-linter" options="-Xlint:unchecked,deprecation,fallthrough,finally" />

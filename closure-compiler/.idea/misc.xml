@@ -4,6 +4,8 @@
   <component name="FrameworkDetectionExcludesConfiguration">
     <file type="gwt" url="file://$PROJECT_DIR$/gen" />
     <file type="gwt" url="file://$PROJECT_DIR$/src" />
+    <file type="gwt" url="file://$PROJECT_DIR$/target/generated-sources/annotations" />
+    <file type="gwt" url="file://$PROJECT_DIR$/target/generated-test-sources/test-annotations" />
     <file type="gwt" url="file://$PROJECT_DIR$/test" />
   </component>
   <component name="MavenProjectsManager">
@@ -11,6 +13,7 @@
       <list>
         <option value="$PROJECT_DIR$/pom.xml" />
         <option value="$PROJECT_DIR$/pom-refasterjs.xml" />
+        <option value="$PROJECT_DIR$/dependency-reduced-pom.xml" />
       </list>
     </option>
   </component>

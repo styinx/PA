@@ -31,7 +31,7 @@ Closure Compiler, part of the Closure Tools project.
 
 The Closure Compiler is a tool for making ECMAScript (JavaScript) download
 and run faster. It parses your program, analyzes it, removes dead code, and
-rewrites and minimizes what's left. It also checks syntax, variable
+rewrites and minimizes what's left. It also checks syntax, variableDefinition
 references, and types, and warns about common pitfalls.
 
 
@@ -89,7 +89,7 @@ OPTIONS
 
 **--create_name_map_files**
 
-    Specify that variable renaming and property renaming map files will be
+    Specify that variableDefinition renaming and property renaming map files will be
     produced as {binary name}_vars_map.out and {binary name}_props_map.out.
 
     Note that this flag cannot be used in conjunction with either
@@ -108,10 +108,10 @@ OPTIONS
 
 **--define** `DEFINITION`, **--D** `DEFINITION`, **-D** `DEFINITION`
 
-    Override the value of a variable annotated @define. The format of
+    Override the value of a variableDefinition annotated @define. The format of
     `DEFINITION` is <name>[=<val>], where <name> is the name of a @define
-    variable and <val> is a boolean, number, or a single-quot ed string
-    that contains no single quotes. If [=<val>] is omitted, the variable is
+    variableDefinition and <val> is a boolean, number, or a single-quot ed string
+    that contains no single quotes. If [=<val>] is omitted, the variableDefinition is
     marked true.
 
 **--externs** `EXTERNFILE`
@@ -335,12 +335,12 @@ OPTIONS
 
 **--variable_map_input_file** `MAPFILE`
 
-    Specify `MAPFILE` as containing the serialized version of the variable
+    Specify `MAPFILE` as containing the serialized version of the variableDefinition
     renaming map produced by a previous compilation.
 
 **--variable_map_output_file** `MAPFILE`
 
-    Save the serialized version of the variable renaming map produced to
+    Save the serialized version of the variableDefinition renaming map produced to
     `MAPFILE`.
 
 **--warning_level** `LEVEL`
@@ -415,7 +415,7 @@ of the |license|.
 ..  |authoremail| replace:: <ben+ecmascript@benfinney.id.au>
 
 ..
-    Local variables:
+    Local variableDefinitions:
     mode: rst
     coding: utf-8
     time-stamp-format: "%:y-%02m-%02d"

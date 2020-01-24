@@ -764,9 +764,6 @@ public final class DefaultPassConfig extends PassConfig {
       }
     }
 
-    // Static Taint Analysis
-    passes.add(staticTaintAnalysis);
-
     if (options.collapseAnonymousFunctions) {
       passes.add(collapseAnonymousFunctions);
     }
@@ -2438,13 +2435,6 @@ public final class DefaultPassConfig extends PassConfig {
           .setInternalFactory(FlowSensitiveInlineVariables::new)
           .setFeatureSet(ES2019_MODULES)
           .build();
-
-  private final PassFactory staticTaintAnalysis =
-      PassFactory.builder()
-              .setName(PassNames.STATIC_TAINT_ANALYSIS)
-              .setInternalFactory(StaticTaintAnalysisPass::new)
-              .setFeatureSet(ES2019_MODULES)
-              .build();
 
   /** Uses register-allocation algorithms to use fewer variables. */
   private final PassFactory coalesceVariableNames =
