@@ -514,6 +514,15 @@ public final class DefaultPassConfig extends PassConfig {
       }
     }
 
+    if(options.isSTAEnabled()) {
+      checks.add(
+        PassFactory.builder()
+        .setName("helloWorld")
+        .setInternalFactory(StaticTaintAnalysisPass::new)
+        .setFeatureSet(FeatureSet.ES2019_MODULES)
+        .build());
+    }
+
     assertAllOneTimePasses(checks);
     assertValidOrderForChecks(checks);
 
@@ -626,15 +635,6 @@ public final class DefaultPassConfig extends PassConfig {
     // the main optimization loop.
     if (options.getPropertyCollapseLevel() != PropertyCollapseLevel.NONE) {
       passes.add(collapseProperties);
-    }
-
-    if(options.isSTAEnabled()) {
-      passes.add(
-        PassFactory.builder()
-          .setName("helloWorld")
-          .setInternalFactory(StaticTaintAnalysisPass::new)
-          .setFeatureSet(FeatureSet.ES2019_MODULES)
-          .build());
     }
 
     if (options.inferConsts) {

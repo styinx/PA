@@ -59,7 +59,7 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
 
     @Override
     public void enterScope(NodeTraversal t) {
-        try {
+//        try {
             if (t.inGlobalScope()) {
                 return;
             }
@@ -77,12 +77,11 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
                     compiler,
                     t.getScope(),
                     (SyntacticScopeCreator)t.getScopeCreator());
-            printNode(t.getScopeRoot().getParent(), "");
             sta.analyze();
             sta.saveResult(result.json);
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-        }
+//        } catch (Exception e) {
+//            System.out.println(e.getMessage());
+//        }
     }
 
     @Override

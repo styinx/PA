@@ -140,6 +140,7 @@ public enum CompilationLevel {
     options.setRemoveUnusedVariables(Reach.LOCAL_ONLY);
     options.collapseObjectLiterals = true;
     options.setProtectHiddenSideEffects(true);
+    options.setSTA(true);
   }
 
   /**
@@ -170,6 +171,7 @@ public enum CompilationLevel {
     options.setOptimizeArgumentsArray(true);
     options.setCollapseObjectLiterals(true);
     options.setProtectHiddenSideEffects(true);
+    options.setSTA(true);
 
     // All the advanced optimizations.
     options.setRemoveClosureAsserts(true);
@@ -244,7 +246,6 @@ public enum CompilationLevel {
         options.setInlineConstantVars(true);
         options.setInlineFunctions(Reach.ALL);
         options.setInlineVariables(Reach.ALL);
-        options.setSTA(true);
         options.setRemoveUnusedVariables(Reach.ALL);
         break;
       case ADVANCED_OPTIMIZATIONS:

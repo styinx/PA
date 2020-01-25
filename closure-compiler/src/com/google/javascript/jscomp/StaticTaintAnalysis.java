@@ -1,7 +1,6 @@
 package com.google.javascript.jscomp;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.javascript.jscomp.graph.LatticeElement;
 import com.google.javascript.rhino.Node;
@@ -18,6 +17,16 @@ import java.util.*;
 class StaticTaintAnalysis
         extends DataFlowAnalysis<Node, StaticTaintAnalysis.STAScope> {
 
+    class Pair<T, R> {
+        T first;
+        R second;
+
+        Pair(T t, R r) {
+            this.first = t;
+            this.second = r;
+        }
+    }
+
     /**
      * Definition of a variable that holds its tainted state and the relation to other variables.
      * If the variable does not have a parent it is considered a root.
@@ -26,17 +35,29 @@ class StaticTaintAnalysis
         enum Tainted {No, May, Must}
 
         private Node node;
-        private HashSet<Var> dependent;
-        private boolean source;
-        private boolean sink;
+        private Var var;
+        private HashSet<VariableDefinition> dependent;
+        private Boolean source;
+        private Boolean sink;
         private Tainted tainted;
 
         private VariableDefinition(Node n) {
             this.node = n;
-            this.dependent = new HashSet<Var>();
+            this.var = null;
+            this.dependent = new HashSet<VariableDefinition>();
             this.source = false;
             this.sink = false;
             this.tainted = Tainted.No;
+        }
+
+        private String getName() {
+            if (node != null) {
+                if (node.isName()) {
+                    return node.getString() + "@" + node.getLineno();
+                }
+                return node.toString() + "@" + node.getLineno();
+            }
+            return "~";
         }
     }
 
@@ -44,21 +65,63 @@ class StaticTaintAnalysis
      * Defines a function scope that holds a collection of variables.
      */
     public static final class STAScope implements LatticeElement {
-        private HashMap<Var, VariableDefinition> definitions;
+        enum Reachable {Undefined, Never, Maybe, Must}
+
+        ;
+
+        private String name;
+        private VariableDefinition varContext;
+        private Reachable conditionContext;
+        private HashSet<VariableDefinition> definitions;
 
         STAScope() {
-            this.definitions = new HashMap<Var, VariableDefinition>();
+            this.name = "scope@-1";
+            this.varContext = null;
+            this.conditionContext = Reachable.Undefined;
+            this.definitions = new HashSet<VariableDefinition>();
         }
 
         public STAScope(STAScope other) {
-            definitions = new HashMap<Var, VariableDefinition>(other.definitions);
+            if (!other.name.equals("scope@-1")) {
+                name = other.name;
+            } else {
+                name = "scope@-1";
+            }
+            varContext = other.varContext;
+            conditionContext = other.conditionContext;
+            definitions = new HashSet<VariableDefinition>(other.definitions);
         }
 
-        public STAScope(Collection<Var> vars) {
+        public STAScope(Collection<VariableDefinition> vars) {
             this();
-            for (Var var : vars) {
-                definitions.put(var, new VariableDefinition(var.scope.getRootNode()));
+            definitions.addAll(vars);
+        }
+
+        VariableDefinition.Tainted taintState() {
+            switch (conditionContext) {
+                case Never:
+                    return VariableDefinition.Tainted.No;
+                case Maybe:
+                    return VariableDefinition.Tainted.May;
+                case Undefined:
+                case Must:
+                    return VariableDefinition.Tainted.Must;
             }
+            return VariableDefinition.Tainted.No;
+        }
+
+        VariableDefinition findVar(Node n) {
+            if (n != null && n.isName()) {
+                for (VariableDefinition var : definitions) {
+                    if (var.node.getString().equals(n.getString())) {
+                        return var;
+                    }
+                }
+                VariableDefinition var = new VariableDefinition(n);
+                definitions.add(var);
+                return var;
+            }
+            return null;
         }
     }
 
@@ -70,36 +133,8 @@ class StaticTaintAnalysis
         @Override
         STAScope apply(STAScope first, STAScope second) {
             STAScope result = new STAScope();
-            Map<Var, VariableDefinition> resultMap = result.definitions;
-
-            for (Map.Entry<Var, VariableDefinition> varEntry : first.definitions.entrySet()) {
-                Var var = varEntry.getKey();
-                VariableDefinition aDef = varEntry.getValue();
-
-                if (aDef == null) {
-                    resultMap.put(var, null);
-                    continue;
-                }
-
-                if (second.definitions.containsKey(var)) {
-                    VariableDefinition bDef = second.definitions.get(var);
-
-                    if (aDef.equals(bDef)) {
-                        resultMap.put(var, aDef);
-                    } else {
-                        resultMap.put(var, null);
-                    }
-                } else {
-                    resultMap.put(var, aDef);
-                }
-            }
-
-            for (Map.Entry<Var, VariableDefinition> entry : second.definitions.entrySet()) {
-                Var var = entry.getKey();
-                if (!first.definitions.containsKey(var)) {
-                    resultMap.put(var, entry.getValue());
-                }
-            }
+            result.definitions.addAll(first.definitions);
+            result.definitions.addAll(second.definitions);
             return result;
         }
     }
@@ -107,7 +142,7 @@ class StaticTaintAnalysis
     private static String source = "retSource";
     private static String sink = "sink";
     private HashMap<String, Var> variables;
-    private String scope;
+    private String scopeName;
     private STAScope result;
 
     /**
@@ -126,7 +161,7 @@ class StaticTaintAnalysis
 
         super(cfg, new STAJoin());
         this.variables = new HashMap<String, Var>();
-        this.scope = "scope";
+        this.scopeName = "scope@-1";
         this.result = new STAScope();
         HashSet<Var> escaped = new HashSet<Var>();
         ArrayList<Var> orderedVars = new ArrayList<Var>();
@@ -141,40 +176,20 @@ class StaticTaintAnalysis
     }
 
     @Override
-    STAScope flowThrough(Node node, STAScope input) {
-        STAScope out = new STAScope(input);
-        try {
-            doSTA(node, node, out, false);
-        } catch (Exception e) {
-            System.out.println(e.getMessage());
-        }
-        this.result = out;
-        return out;
+    STAScope flowThrough(Node n, STAScope in) {
+        log("Flow", n);
+        doSTA(n);
+        return result;
     }
 
     @Override
     STAScope createInitialEstimateLattice() {
-        return new STAScope();
+        return result;
     }
 
     @Override
     STAScope createEntryLattice() {
-        return new STAScope(variables.values());
-    }
-
-    /**
-     * If the variable name was changed this function
-     * returns the original function name.
-     *
-     * @param varName Name of the variable as String.
-     * @return The original function name as String.
-     */
-    private static String getNormalizedVarName(String varName) {
-        if (varName.indexOf('$') > 0) {
-            varName = varName.substring(0, varName.indexOf('$', 0)) +
-                    varName.substring(varName.lastIndexOf('@'));
-        }
-        return varName;
+        return result;
     }
 
     void saveResult(JsonObject json) {
@@ -182,208 +197,246 @@ class StaticTaintAnalysis
         JsonArray mustReach = new JsonArray();
         JsonArray mayReach = new JsonArray();
 
-        json.add(scope, info);
+        json.add(scopeName, info);
         info.add("sources_that_must_reach_sinks", mustReach);
         info.add("sources_that_may_reach_sinks", mayReach);
 
-        for(String var : variables.keySet()) {
-            json.add(var, new JsonObject());
-        }
-
-        for (Var var : result.definitions.keySet()) {
-            VariableDefinition def = result.definitions.get(var);
-            if(def.tainted == VariableDefinition.Tainted.May) {
-                mayReach.add(var.name);
-            } else if(def.tainted == VariableDefinition.Tainted.Must) {
-                mayReach.add(var.name);
-                mustReach.add(var.name);
+        for (VariableDefinition var : result.definitions) {
+            if (var.tainted == VariableDefinition.Tainted.May) {
+                mayReach.add(var.getName());
+            } else if (var.tainted == VariableDefinition.Tainted.Must) {
+                mayReach.add(var.getName());
+                mustReach.add(var.getName());
             }
-//            if (var.mayBeTainted() || var.mustBeTainted()) {
-//                if (!var.isRoot()) {
-//                    for (VariableDefinition parent : var.getParents()) {
-//                        if (var.mayBeTainted()) {
-//                            mayReach.add(StaticTaintAnalysis.getNormalizedVarName(parent.toString()));
-//                        } else {
-//                            mayReach.add(StaticTaintAnalysis.getNormalizedVarName(parent.toString()));
-//                            mustReach.add(StaticTaintAnalysis.getNormalizedVarName(parent.toString()));
-//                        }
-//                    }
-//                } else {
-//                    if (var.mayBeTainted()) {
-//                        mayReach.add(StaticTaintAnalysis.getNormalizedVarName(var.toString()));
-//                    } else {
-//                        mayReach.add(StaticTaintAnalysis.getNormalizedVarName(var.toString()));
-//                        mustReach.add(StaticTaintAnalysis.getNormalizedVarName(var.toString()));
-//                    }
-//                }
-//            }
-//            System.out.println(" |\t May Tainted: " +
-//                    var.mayBeTainted() + " |\t Must Tainted: " +
-//                    var.mustBeTainted() + " |\t Root: " +
-//                    var.isRoot() + " |\t Sink: " +
-//                    var.isSink() + " |\t Source: " +
-//                    var.isSource() + " |\t Name " +
-//                    StaticTaintAnalysis.getNormalizedVarName(var.toString()) + " | Parents: " +
-//                    var.getParents()
-//            );
+
+            JsonObject prop = new JsonObject();
+            json.add(var.getName(), prop);
+            prop.addProperty("source", var.source);
+            prop.addProperty("sink", var.sink);
+            prop.addProperty("taint", var.tainted.toString());
+
+            JsonArray dep = new JsonArray();
+            prop.add("dependent", dep);
+            for (VariableDefinition v : var.dependent) {
+                dep.add(v.getName());
+            }
         }
     }
 
-    private void doSTA(Node n, Node cfgNode, STAScope output, boolean conditional) {
-        if(n == null) {
+    private void log(String what, Node n) {
+        if (n != null) {
+            System.out.print(what + " \t#" + n.getLineno() + " \t" + n.getToken().name());
+
+            if (n.isName()) {
+                System.out.println(" \t" + n.getString());
+            } else {
+                System.out.println();
+            }
+        } else {
+            System.out.println(what);
+        }
+    }
+
+    private boolean isConditional(Node n) {
+        return n.isIf() || n.isVanillaFor() || n.isForIn() || n.isWhile() || n.isSwitch();
+    }
+
+    private void doSTACall(Node n) {
+        log("Call", n);
+        // Source
+        if (n.hasOneChild() && n.getFirstChild().isName()) {
+            if (n.getFirstChild().getString().equals(StaticTaintAnalysis.source)) {
+                // Check assignment
+                if (result.varContext != null) {
+                    // Set as source
+                    result.varContext.source = true;
+                }
+            }
+        }
+        // Sink
+        else if (n.hasTwoChildren() && n.getFirstChild().isName()) {
+            if (n.getFirstChild().getString().equals(StaticTaintAnalysis.sink)) {
+                if (n.getSecondChild().isName()) {
+                    VariableDefinition var = result.findVar(n.getSecondChild());
+
+                    if (var.tainted != VariableDefinition.Tainted.Must) {
+                        //  Set as sink
+                        var.sink = true;
+                        // If it was a source before we mark it as tainted
+                        if (var.source) {
+                            // If we do not know if we reach the conditional body.
+                            var.tainted = result.taintState();
+                        }
+
+                        // If a dependent variable is a source we mark the parent as tainted.
+                        for (VariableDefinition dep : var.dependent) {
+                            if (dep.source) {
+                                // If we do not know if we reach the conditional body.
+                                dep.tainted = result.taintState();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void doSTAVar(Node n) {
+        log("Var", n.getFirstChild());
+        if (n.hasChildren() && n.getFirstChild().isName()) {
+            VariableDefinition var = new VariableDefinition(n.getFirstChild());
+            result.definitions.add(var);
+
+            result.varContext = var;
+            doSTAChildren(n.getFirstChild());
+            result.varContext = null;
+        }
+    }
+
+    private void doSTAAssign(Node n) {
+        log("Assign", n.getFirstChild());
+        if (n.hasChildren() && n.getFirstChild().isName()) {
+            result.varContext = result.findVar(n.getFirstChild());
+
+            doSTAChildren(n);
+            result.varContext = null;
+        }
+    }
+
+    private void doSTAName(Node n) {
+        log("Name", n);
+        if (result.varContext != null) {
+            log("#=============== Parent " + result.varContext.getName(), null);
+            VariableDefinition var = result.findVar(n);
+            log("#=============== depends on " + var.getName(), null);
+
+            if (result.varContext != var) {
+                if (!var.dependent.isEmpty()) {
+                    result.varContext.dependent.addAll(var.dependent);
+                } else {
+                    result.varContext.dependent.add(var);
+                }
+            }
+        }
+    }
+
+    /**
+     *
+     * @param n Node
+     * @param conditionalValue A pair that stores on one hand if the condition
+     *                         can be evaluated to a constant and on the other
+     *                         hand if the condition contains a named variable.
+     */
+    private void checkCondition(Node n, Pair<Boolean, Boolean> conditionalValue) {
+        if (NodeUtil.isConstantName(n)) {
+            // TODO We need to check if the value maybe evaluates to false.
+            //  Then we need to set the value to false beause the body is
+            //  never reachable.
+            conditionalValue.first = true;
+        } else {
+            conditionalValue.first = false;
+            if (n.isName()) {
+                conditionalValue.second = true;
+            }
+        }
+        for (Node c : n.children()) {
+            checkCondition(c, conditionalValue);
+        }
+    }
+
+    private void doSTAConditional(Node n) {
+        log("Cond", n);
+
+        Pair<Boolean, Boolean> conditionalValue = new Pair<Boolean, Boolean>(false, false);
+
+        // If the conditional is either a loop or it is an if with 1 block.
+        if (!(n.isSwitch() || (n.isIf() && n.hasXChildrenOrMore(3)))) {
+            log("=========# Is loop or single if", null);
+            // Get the node where the expression is stored.
+            Node condition = NodeUtil.getConditionExpression(n);
+            if (condition != null) {
+
+                checkCondition(condition, conditionalValue);
+                if (conditionalValue.first) {
+                    log("=========# must reach", null);
+                    // If the expression evaluates to true we always reach the body.
+                    result.conditionContext = STAScope.Reachable.Must;
+                } else {
+                    if (conditionalValue.second) {
+                        log("=========# can maybe reach", null);
+                        // We are not sure if we can reach it.
+                        result.conditionContext = STAScope.Reachable.Maybe;
+                    } else {
+                        log("=========# can never reach", null);
+                        // If it evaluates to false we never can reach it.
+                        result.conditionContext = STAScope.Reachable.Never;
+                    }
+                }
+            } else {
+                log("=========# must reach", null);
+                // The condition is empty, we can always reach the body.
+                result.conditionContext = STAScope.Reachable.Must;
+            }
+
+            // If the block is maybe or definitely reachable.
+            if (result.conditionContext != STAScope.Reachable.Never) {
+                Node block = NodeUtil.getLoopCodeBlock(n);
+                if (block != null) {
+                    doSTAChildren(block);
+                }
+            }
+        } else {
+            log("=========# Is switch or if with > 3", null);
+            log("=========# must reach", null);
+            // If we are inside a switch or an if with more than 1 block
+            // and a name is inside one of those blocks it must be reachable.
+            result.conditionContext = STAScope.Reachable.Must;
+
+            for (Node c : n.children()) {
+                // Do not check the condition but only block.
+                if (!c.equals(n.getFirstChild())) {
+                    doSTAChildren(c);
+                }
+            }
+        }
+
+        result.conditionContext = STAScope.Reachable.Undefined;
+    }
+
+    private void doSTAChildren(Node n) {
+        for (Node c : n.children()) {
+            doSTA(c);
+        }
+    }
+
+    private void doSTA(Node n) {
+        log("", n);
+        if (n == null) {
             return;
         }
 
-        switch (n.getToken()) {
-            case BLOCK:
-            case ROOT:
-                return;
-
-            case FUNCTION:
-                scope = n.getFirstChild().getString() + "@" + n.getLineno();
-                return;
-
-            case CALL:
-                // Source is called
-                if(n.hasXChildren(1)) {
-                    if(n.getParent().isName()) {
-                        Node ads = n.getParent();
-                        System.out.println(" # " + ads.getLineno() + " | " + ads.getString());
-                        output.definitions.get(variables.get(n.getParent().getString())).source = true;
-                    }
-                } else if(n.hasXChildren(2)) {
-                    if(n.getSecondChild().isName()) {
-                        Node ads = n.getSecondChild();
-                        System.out.println(" # " + ads.getLineno() + " | " + ads.getString());
-                        VariableDefinition var = output.definitions.get(variables.get(n.getParent().getString()));
-                        var.sink = true;
-
-                        // If the variable was a source before it leaks.
-                        if(var.source) {
-                            var.tainted = VariableDefinition.Tainted.Must;
-                        }
-                    }
-                }
-                return;
-
-            case WHILE:
-            case DO:
-            case IF:
-            case FOR:
-                doSTA(NodeUtil.getConditionExpression(n), cfgNode, output, conditional);
-                return;
-
-            case FOR_IN:
-            case FOR_OF:
-            case FOR_AWAIT_OF:
-                // for(x in y) {...}
-                Node lhs = n.getFirstChild();
-                Node rhs = lhs.getNext();
-                if (NodeUtil.isNameDeclaration(lhs)) {
-                    lhs = lhs.getLastChild(); // for(var x in y) {...}
-                }
-                if (lhs.isName()) {
-                    // TODO(lharker): This doesn't seem right - given for (x in y), the value set to x isn't y
-                    //addToDefIfLocal(lhs.getString(), cfgNode, rhs, output);
-                } else if (lhs.isDestructuringLhs()) {
-                    lhs = lhs.getFirstChild();
-                }
-                if (lhs.isDestructuringPattern()) {
-                    doSTA(lhs, cfgNode, output, true);
-                }
-                return;
-
-            case AND:
-            case OR:
-                doSTA(n.getFirstChild(), cfgNode, output, conditional);
-                doSTA(n.getLastChild(), cfgNode, output, true);
-                return;
-
-            case HOOK:
-                doSTA(n.getFirstChild(), cfgNode, output, conditional);
-                doSTA(n.getSecondChild(), cfgNode, output, true);
-                doSTA(n.getLastChild(), cfgNode, output, true);
-                return;
-
-            case LET:
-            case CONST:
-            case VAR:
-                for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
-                    if (c.hasChildren()) {
-                        if (c.isName()) {
-                            doSTA(c.getFirstChild(), cfgNode, output, conditional);
-                            output.definitions.put(variables.get(c.getString()), new VariableDefinition(c));
-//                            addToDefIfLocal(c.getString(), conditional ? null : cfgNode,
-//                                    c.getFirstChild(), output);
-                        } else {
-//                            checkState(c.isDestructuringLhs(), c);
-                            doSTA(c.getSecondChild(), cfgNode, output, conditional);
-                            doSTA(c.getFirstChild(), cfgNode, output, conditional);
-                        }
-                    }
-                }
-                return;
-
-            case DEFAULT_VALUE:
-                if (n.getFirstChild().isDestructuringPattern()) {
-                    doSTA(n.getSecondChild(), cfgNode, output, true);
-                    doSTA(n.getFirstChild(), cfgNode, output, conditional);
-                } else if (n.getFirstChild().isName()) {
-                    doSTA(n.getSecondChild(), cfgNode, output, true);
-//                    addToDefIfLocal(
-//                            n.getFirstChild().getString(), conditional ? null : cfgNode, null, output);
-                } else {
-                    doSTA(n.getFirstChild(), cfgNode, output, conditional);
-                    doSTA(n.getSecondChild(), cfgNode, output, true);
-                }
-                break;
-
-            case NAME:
-                VariableDefinition var = output.definitions.get(variables.get(n.getParent().getString()));
-                var.sink = true;
-                if (NodeUtil.isLhsByDestructuring(n)) {
-//                    addToDefIfLocal(n.getString(), conditional ? null : cfgNode, null, output);
-                } else if ("arguments".equals(n.getString())) {
-//                    escapeParameters(output);
-                }
-                return;
-
-            default:
-                if (NodeUtil.isAssignmentOp(n)) {
-                    if (n.getFirstChild().isName()) {
-                        Node name = n.getFirstChild();
-                        doSTA(name.getNext(), cfgNode, output, conditional);
-//                        addToDefIfLocal(name.getString(), conditional ? null : cfgNode, n.getLastChild(), output);
-                        return;
-                    } else if (NodeUtil.isGet(n.getFirstChild())) {
-                        // Treat all assignments to arguments as redefining the
-                        // parameters itself.
-                        Node obj = n.getFirstFirstChild();
-                        if (obj.isName() && "arguments".equals(obj.getString())) {
-//                            // TODO(user): More accuracy can be introduced
-//                            // i.e. We know exactly what arguments[x] is if x is a constant
-//                            // number.
-//                            escapeParameters(output);
-                        }
-                    } else if (n.getFirstChild().isDestructuringPattern()) {
-                        doSTA(n.getSecondChild(), cfgNode, output, conditional);
-                        doSTA(n.getFirstChild(), cfgNode, output, conditional);
-                        return;
-                    }
-                }
-
-                // DEC and INC actually defines the variable.
-                if (n.isDec() || n.isInc()) {
-                    Node target = n.getFirstChild();
-                    if (target.isName()) {
-//                        addToDefIfLocal(target.getString(), conditional ? null : cfgNode, null, output);
-                        return;
-                    }
-                }
-
-                for (Node c = n.getFirstChild(); c != null; c = c.getNext()) {
-                    doSTA(c, cfgNode, output, conditional);
-                }
+        if (n.isFunction()) {
+            log("Func", n);
+            // First child is the function name.
+            scopeName = n.getFirstChild().getString() + "@" + n.getLineno();
+        } else if (n.isCall()) {
+            doSTACall(n);
+        } else if (n.isVar() || n.isConst() || n.isLet()) {
+            doSTAVar(n);
+        } else if (n.isAssign()) {
+            doSTAAssign(n);
+        } else if (isConditional(n)) {
+            doSTAConditional(n);
+        } else if (n.isName()) {
+            doSTAName(n);
+        } else if (n.isBlock()) {
+            return;
+        } else if(n.isObjectLit() || n.isArrayLit()) {
+            result.varContext = result.findVar(n.getParent());
+            doSTAChildren(n);
+            result.varContext = null;
+        } else {
+            doSTAChildren(n);
         }
     }
 }

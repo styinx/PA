@@ -1884,6 +1884,19 @@ public class Node implements Serializable {
     return c == x;
   }
 
+  /**
+   * Check for has exactly the number of specified children or more.
+   *
+   * @return Whether the node has exactly the number of children specified or more.
+   */
+  public final boolean hasXChildrenOrMore(int x) {
+    int c = 0;
+    for (Node n = first; n != null && c <= x; n = n.next) {
+      c++;
+    }
+    return c >= x;
+  }
+
   public final int getChildCount() {
     int c = 0;
     for (Node n = first; n != null; n = n.next) {

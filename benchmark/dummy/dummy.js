@@ -1,8 +1,16 @@
-function getInformation() {
+function doAction() {
     let input = retSource();
-    let q = 'SELECT * FROM ' + input;
-    let len = 20;
-    if (q.length > len) {
-        let ans = sink(q);
+
+    switch (input) {
+        case 'x':
+            sink(input);
+            break;
+        case 'y':
+            let next_input = retSource()
+            let final_input = input + next_input;
+            sink(final_input);
+            break;
+        default:
+            console.log('Nothing to do');
     }
 }

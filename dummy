@@ -1,3 +1,52 @@
+@1
+{
+  "getInformation@1": {
+    "sources_that_must_reach_sinks": [],
+    "sources_that_may_reach_sinks": ["input@2"]
+  }
+}
+
+FUNCTION
+  NAME
+  PARAM_LIST
+  BLOCK
+    VAR
+      NAME
+        CALL
+          NAME
+    VAR
+      NAME
+        ADD
+          STRING
+          NAME
+    VAR
+      NAME
+        NUMBER
+    IF
+      GT
+        GETPROP
+          NAME
+          STRING
+        NAME
+      BLOCK
+        VAR
+          NAME
+            CALL
+              NAME
+              NAME
+
+@2
+{
+  "saveUserInfo@1": {
+    "sources_that_must_reach_sinks": [],
+    "sources_that_may_reach_sinks": ["id@2", "name@3", "age@4"]
+  },
+  "passUserId@19": {
+    "sources_that_must_reach_sinks": ["id@20"],
+    "sources_that_may_reach_sinks": ["id@20"]
+  }
+}
+
 FUNCTION
   NAME
   PARAM_LIST
@@ -18,9 +67,6 @@ FUNCTION
       NAME
         CALL
           NAME
-    VAR
-      NAME
-        NAME
     VAR
       NAME
         CALL
@@ -51,6 +97,14 @@ FUNCTION
           CALL
             NAME
             NAME
+
+@3
+{
+  "findSomething@1": {
+    "sources_that_must_reach_sinks": [],
+    "sources_that_may_reach_sinks": []
+  }
+}
 FUNCTION
   NAME
   PARAM_LIST
@@ -64,8 +118,14 @@ FUNCTION
         NAME
         NAME
 
-
 @4
+{
+  "calculations@1": {
+    "sources_that_must_reach_sinks": ["income_tax@2"],
+    "sources_that_may_reach_sinks": ["income_tax@2"]
+  }
+}
+
 FUNCTION
   NAME
   PARAM_LIST
@@ -104,6 +164,138 @@ FUNCTION
             ADD
               NAME
               NUMBER
+    EXPR_RESULT
+      CALL
+        NAME
+        NAME
+
+@5
+{
+  "doAction@1": {
+    "sources_that_must_reach_sinks": ["next_input@9"],
+    "sources_that_may_reach_sinks": ["input@2", "next_input@9"]
+  }
+}
+
+FUNCTION
+  NAME
+  PARAM_LIST
+  BLOCK
+    VAR
+      NAME
+        CALL
+          NAME
+    SWITCH
+      NAME
+      CASE
+        STRING
+        BLOCK
+          EXPR_RESULT
+            CALL
+              NAME
+              NAME
+          BREAK
+      CASE
+        STRING
+        BLOCK
+          VAR
+            NAME
+              CALL
+                NAME
+          VAR
+            NAME
+              ADD
+                NAME
+                NAME
+          EXPR_RESULT
+            CALL
+              NAME
+              NAME
+          BREAK
+      DEFAULT_CASE
+        BLOCK
+          EXPR_RESULT
+            CALL
+              GETPROP
+                NAME
+                STRING
+              STRING
+
+@6
+{
+  "takeActions@1": {
+    "sources_that_must_reach_sinks": ["y@8"],
+    "sources_that_may_reach_sinks": ["y@8"]
+  }
+}
+
+FUNCTION
+  NAME
+  PARAM_LIST
+  BLOCK
+    VAR
+      NAME
+        CALL
+          NAME
+    VAR
+      NAME
+        NUMBER
+    VAR
+      NAME
+        OBJECTLIT
+          STRING_KEY
+            ARRAYLIT
+          STRING_KEY
+            ARRAYLIT
+    VAR
+      NAME
+        CALL
+          NAME
+    VAR
+      NAME
+        NUMBER
+    VAR
+      NAME
+        ARRAYLIT
+    VAR
+      NAME
+        NUMBER
+    FOR
+      EMPTY
+      LT
+        NAME
+        NUMBER
+      INC
+        NAME
+      BLOCK
+        EXPR_RESULT
+          CALL
+            NAME
+            NAME
+        EXPR_RESULT
+          CALL
+            NAME
+            NAME
+    EXPR_RESULT
+      ASSIGN
+        NAME
+        ADD
+          ADD
+            NAME
+            NAME
+          NAME
+    EXPR_RESULT
+      CALL
+        GETPROP
+          NAME
+          STRING
+        NAME
+    EXPR_RESULT
+      ASSIGN
+        GETELEM
+          NAME
+          STRING
+        NAME
     EXPR_RESULT
       CALL
         NAME
