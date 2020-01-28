@@ -1,16 +1,23 @@
-function doAction() {
-    let input = retSource();
+function takeActions() {
+    let x = retSource(),
+        m = 0,
+        obj = {
+            'a1': [],
+            'a2': []
+        };
+    let y = retSource(),
+        z = 20,
+        o = [];
 
-    switch (input) {
-        case 'x':
-            sink(input);
-            break;
-        case 'y':
-            let next_input = retSource()
-            let final_input = input + next_input;
-            sink(final_input);
-            break;
-        default:
-            console.log('Nothing to do');
+    for (let i = 0; i < 10; i++) {
+        sink(m);
+        sink(z);
     }
+
+    x = y + z + m;
+
+    o.push(x);
+
+    obj['a1'] = o;
+    sink(obj);
 }

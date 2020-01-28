@@ -55,19 +55,15 @@ FUNCTION
       NAME
         CALL
           NAME
-    VAR
       NAME
         CALL
           NAME
-    VAR
       NAME
         CALL
           NAME
-    VAR
       NAME
         CALL
           NAME
-    VAR
       NAME
         CALL
           NAME
@@ -237,10 +233,8 @@ FUNCTION
       NAME
         CALL
           NAME
-    VAR
       NAME
         NUMBER
-    VAR
       NAME
         OBJECTLIT
           STRING_KEY
@@ -251,17 +245,14 @@ FUNCTION
       NAME
         CALL
           NAME
-    VAR
       NAME
         NUMBER
-    VAR
       NAME
         ARRAYLIT
-    VAR
-      NAME
-        NUMBER
     FOR
-      EMPTY
+      VAR
+        NAME
+          NUMBER
       LT
         NAME
         NUMBER

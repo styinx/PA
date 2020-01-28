@@ -59,29 +59,23 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
 
     @Override
     public void enterScope(NodeTraversal t) {
-//        try {
-            if (t.inGlobalScope()) {
-                return;
-            }
+        if (t.inGlobalScope()) {
+            return;
+        }
 
-            if (!t.getScope().isFunctionBlockScope()) {
-                return;
-            }
+        if (!t.getScope().isFunctionBlockScope()) {
+            return;
+        }
 
-            ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
-            cfa.process(null, t.getScopeRoot().getParent());
+        ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
+        cfa.process(null, t.getScopeRoot().getParent());
 
-            // Compute the static taint analysis.
-            StaticTaintAnalysis sta = new StaticTaintAnalysis(
-                    cfa.getCfg(),
-                    compiler,
-                    t.getScope(),
-                    (SyntacticScopeCreator)t.getScopeCreator());
-            sta.analyze();
-            sta.saveResult(result.json);
-//        } catch (Exception e) {
-//            System.out.println(e.getMessage());
-//        }
+        printNode(t.getScopeRoot().getParent(), "");
+
+        // Compute the static taint analysis.
+        StaticTaintAnalysis sta = new StaticTaintAnalysis(cfa.getCfg());
+        sta.doSTA(t.getScopeRoot().getParent());
+        sta.saveResult(result.json);
     }
 
     @Override
