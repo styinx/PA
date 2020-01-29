@@ -5,7 +5,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.javascript.rhino.Node;
 
-import java.util.Arrays;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallback {
 
@@ -23,14 +25,15 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
         void writeRes() {
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
             System.out.println("\n" + gson.toJson(json) + "\n");
-//        try {
-//            Files.writeString(
-//                    Paths.get("file.js".replace(".js", "_out.js")),
-//                    json.toString());
-//
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
+            System.out.println("\n" + json.toString() + "\n");
+        try {
+            Files.writeString(
+                    Paths.get("file.js".replace(".js", "_out.js")),
+                    gson.toJson(json));
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         }
     }
 
@@ -70,8 +73,6 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
         ControlFlowAnalysis cfa = new ControlFlowAnalysis(compiler, false, true);
         cfa.process(null, t.getScopeRoot().getParent());
 
-        printNode(t.getScopeRoot().getParent(), "");
-
         // Compute the static taint analysis.
         StaticTaintAnalysis sta = new StaticTaintAnalysis(cfa.getCfg());
         sta.doSTA(t.getScopeRoot().getParent());
@@ -86,13 +87,5 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
     @Override
     public void exitScope(NodeTraversal t) {
 
-    }
-
-    private void printNode(Node n, String pre) {
-        System.out.println(pre + n.getToken().name());
-
-        for (Node c : n.children()) {
-            printNode(c, pre + "  ");
-        }
     }
 }

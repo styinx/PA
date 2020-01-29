@@ -1,11 +1,14 @@
 package com.google.javascript.jscomp;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.javascript.jscomp.graph.LatticeElement;
 import com.google.javascript.rhino.Node;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 
 
 /**
@@ -16,27 +19,17 @@ import java.util.*;
  */
 class StaticTaintAnalysis
         extends DataFlowAnalysis<Node, StaticTaintAnalysis.STAScope> {
-
-    class Pair<T, R> {
-        T first;
-        R second;
-
-        Pair(T t, R r) {
-            this.first = t;
-            this.second = r;
-        }
-    }
-
     /**
      * Definition of a variable that holds its tainted state and the relation to other variables.
      * If the variable does not have a parent it is considered a root.
      */
     public static final class VariableDefinition implements Comparable<VariableDefinition> {
         enum Tainted {No, May, Must}            // Defines if the variable leaks.
+
         enum Reachable {Always, Maybe, Never}   // Defines if the variable is declared inside a conditional.
 
         private Node node;
-        private HashSet<VariableDefinition> dependent;
+        private LinkedHashSet<VariableDefinition> dependent;
         private Boolean source;
         private Boolean sink;
         private Tainted tainted;
@@ -73,9 +66,25 @@ class StaticTaintAnalysis
             return "~";
         }
 
+        private void addDependency(VariableDefinition other) {
+            if (other.dependent.isEmpty()) {
+                dependent.add(other);
+            } else {
+                dependent.addAll(other.dependent);
+            }
+        }
+
+        private void setTaintedState(Reachable reachability) {
+            if(reachability == Reachable.Always) {
+                tainted = Tainted.Must;
+            } else if (reachability == Reachable.Maybe) {
+                tainted = Tainted.May;
+            }
+        }
+
         @Override
         public int compareTo(VariableDefinition o) {
-            if(node != null && o.node != null) {
+            if (node != null && o.node != null) {
                 return node.getLineno() - o.node.getLineno();
             }
             return 0;
@@ -89,7 +98,7 @@ class StaticTaintAnalysis
         private String name;
         private VariableDefinition varContext;
         private VariableDefinition.Reachable conditionContext;
-        private HashSet<VariableDefinition> definitions;
+        private LinkedHashSet<VariableDefinition> definitions;
 
         STAScope() {
             this.name = "scope@-1";
@@ -98,7 +107,9 @@ class StaticTaintAnalysis
             this.definitions = new LinkedHashSet<VariableDefinition>();
         }
 
-        boolean isUnReachable() { return conditionContext == VariableDefinition.Reachable.Never; }
+        boolean isUnReachable() {
+            return conditionContext == VariableDefinition.Reachable.Never;
+        }
 
         VariableDefinition findVar(Node n) {
             if (n != null && n.isName()) {
@@ -169,54 +180,53 @@ class StaticTaintAnalysis
 
     void saveResult(JsonObject json) {
         JsonObject info = new JsonObject();
-        JsonArray mustReach = new JsonArray();
-        JsonArray mayReach = new JsonArray();
-
-        json.add(result.name, info);
-        info.add("sources_that_must_reach_sinks", mustReach);
-        info.add("sources_that_may_reach_sinks", mayReach);
+        JsonArray may = new JsonArray();
+        JsonArray must = new JsonArray();
 
         for (VariableDefinition var : result.definitions) {
             if (var.tainted == VariableDefinition.Tainted.May) {
-                mayReach.add(var.getName());
+                may.add(var.getName());
             } else if (var.tainted == VariableDefinition.Tainted.Must) {
-                mayReach.add(var.getName());
-                mustReach.add(var.getName());
-            }
-
-            JsonObject prop = new JsonObject();
-            json.add(var.getName(), prop);
-            prop.addProperty("source", var.source);
-            prop.addProperty("sink", var.sink);
-            prop.addProperty("reachable", var.reachable.toString());
-            prop.addProperty("taint", var.tainted.toString());
-
-            JsonArray dep = new JsonArray();
-            prop.add("dependent", dep);
-            for (VariableDefinition v : var.dependent) {
-                dep.add(v.getName());
+                may.add(var.getName());
+                must.add(var.getName());
             }
         }
+
+        json.add(result.name, info);
+        info.add("sources_that_must_reach_sinks", must);
+        info.add("sources_that_may_reach_sinks", may);
     }
 
-    private void log(String what, Node n) {
-        if (n != null) {
-            System.out.print(what + " \t#" + n.getLineno() + " \t" + n.getToken().name());
+    private static VariableDefinition.Reachable getConditionalReachability(
+            VariableDefinition.Reachable first,
+            VariableDefinition.Reachable second) {
 
-            if (n.isName()) {
-                System.out.println(" \t" + n.getString());
+        // Both conditions have the same reachability.
+        if (first.equals(second)) {
+            return first;
+        }
+        // Both conditions have different reachability classes.
+        // Always return the lower class.
+        else {
+            if (first == VariableDefinition.Reachable.Always) {
+                return second;
+            } else if (first == VariableDefinition.Reachable.Never) {
+                return first;
+            } else if (first == VariableDefinition.Reachable.Maybe && second == VariableDefinition.Reachable.Always) {
+                return first;
+            } else if (first == VariableDefinition.Reachable.Maybe && second == VariableDefinition.Reachable.Never) {
+                return second;
             } else {
-                System.out.println();
+                // There is no other case but we improve readability.
+                return VariableDefinition.Reachable.Always;
             }
-        } else {
-            System.out.println(what);
         }
     }
 
     private void doSTAVar(Node n) {
         // In the case that we have multiple variables in one statement.
-        for(Node c : n.children()) {
-            if(c.isName()) {
+        for (Node c : n.children()) {
+            if (c.isName()) {
                 VariableDefinition var = new VariableDefinition(c);
                 result.definitions.add(var);
 
@@ -230,20 +240,17 @@ class StaticTaintAnalysis
     private void doSTAAssign(Node n) {
         if (n.hasChildren()) {
             // If we have a variable to variable assignment.
-            if(n.getFirstChild().isName()) {
+            if (n.getFirstChild().isName()) {
                 result.varContext = result.findVar(n.getFirstChild());
                 doSTAChildren(n);
                 result.varContext = null;
             }
-            // We call v['a'] = x.
+            // We call o['a'] = x.
             else if (n.getFirstChild().isGetElem()) {
-                VariableDefinition var = result.findVar(n.getFirstChild().getFirstChild());
+                VariableDefinition caller = result.findVar(n.getFirstChild().getFirstChild());
+                VariableDefinition value = result.findVar(n.getSecondChild());
 
-                if (!var.dependent.isEmpty()) {
-                    var.dependent.addAll(result.findVar(n.getSecondChild()).dependent);
-                } else {
-                    var.dependent.add(result.findVar(n.getSecondChild()));
-                }
+                caller.addDependency(value);
             }
         }
     }
@@ -253,11 +260,7 @@ class StaticTaintAnalysis
             VariableDefinition var = result.findVar(n);
 
             if (result.varContext != var) {
-                if (!var.dependent.isEmpty()) {
-                    result.varContext.dependent.addAll(var.dependent);
-                } else {
-                    result.varContext.dependent.add(var);
-                }
+                result.varContext.addDependency(var);
             }
         }
     }
@@ -279,31 +282,21 @@ class StaticTaintAnalysis
                 if (n.getSecondChild().isName()) {
                     VariableDefinition var = result.findVar(n.getSecondChild());
 
-                    if (var.tainted != VariableDefinition.Tainted.Must) {
-                        //  Set as sink
-                        var.sink = true;
-                        // If it was a source before we mark it as tainted.
-                        if (var.source) {
-                            // If we do not know if we reach the conditional body.
-                            if(var.reachable == VariableDefinition.Reachable.Always) {
-                                var.tainted = VariableDefinition.Tainted.Must;
-                            } else if(var.reachable == VariableDefinition.Reachable.Maybe) {
-                                var.tainted = VariableDefinition.Tainted.May;
-                            }
-                        }
+                    //  Set as sink
+                    var.sink = true;
+                    // If it was a source before we mark it as tainted.
+                    if (var.source) {
+                        // Set the tainted state based on the reachability.
+                        var.setTaintedState(var.reachable);
+                    }
 
-                        // If a dependent variable is a source we mark the parent as tainted.
-                        for (VariableDefinition dep : var.dependent) {
-                            if (dep.source) {
-                                // We can only decide if the dependent source is also reachable.
-                                if(dep.reachable == var.reachable) {
-                                    // If we do not know if we reach the conditional body.
-                                    if (var.reachable == VariableDefinition.Reachable.Always) {
-                                        dep.tainted = VariableDefinition.Tainted.Must;
-                                    } else if (var.reachable == VariableDefinition.Reachable.Maybe) {
-                                        dep.tainted = VariableDefinition.Tainted.May;
-                                    }
-                                }
+                    // If a dependent variable is a source we mark the parent as tainted.
+                    for (VariableDefinition dep : var.dependent) {
+                        if (dep.source) {
+                            // We can only decide if the dependent source is also reachable.
+                            if (dep.reachable == var.reachable) {
+                                // Set the tainted state based on the reachability of the dependent variable.
+                                dep.setTaintedState(var.reachable);
                             }
                         }
                     }
@@ -313,79 +306,60 @@ class StaticTaintAnalysis
         // Another function call.
         else {
             // We call o.f(x).
-            if (n.getFirstChild().isGetProp()) {
-                VariableDefinition var = result.findVar(n.getFirstChild().getFirstChild());
+            if (n.getFirstChild().isGetProp() && n.getSecondChild().isName()) {
+                VariableDefinition caller = result.findVar(n.getFirstChild().getFirstChild());
+                VariableDefinition argument = result.findVar(n.getSecondChild());
 
-                if (!var.dependent.isEmpty()) {
-                    var.dependent.addAll(result.findVar(n.getSecondChild()).dependent);
-                } else {
-                    var.dependent.add(result.findVar(n.getSecondChild()));
-                }
+                caller.addDependency(argument);
             }
         }
     }
 
     /**
-     *
      * @param n Node
-     * @param conditionalValue A pair that stores on one hand if the condition
-     *                         can be evaluated to a constant and on the other
-     *                         hand if the condition contains a named variable.
      */
-    private void checkCondition(Node n, Pair<Boolean, Boolean> conditionalValue) {
-        if (NodeUtil.isConstantName(n)) {
-            // TODO We need to check if the value maybe evaluates to false.
-            //  Then we need to set the value to false beause the body is
-            //  never reachable.
-            conditionalValue.first = true;
-        } else {
-            conditionalValue.first = false;
-            if (n.isName()) {
-                conditionalValue.second = true;
+    private VariableDefinition.Reachable checkCondition(Node n) {
+        VariableDefinition.Reachable reachable = VariableDefinition.Reachable.Always;
+
+        if (n != null) {
+            // The current node of the condition is constant.
+            if (NodeUtil.isConstantName(n)) {
+                // We assume that the constant evaluates always to true.
+                reachable = VariableDefinition.Reachable.Always;
+            }
+            // We can not evaluate the value of the variable.
+            else if (n.isName()) {
+                // We are not sure what the value of the variable is.
+                reachable = VariableDefinition.Reachable.Maybe;
+
+            }
+
+            for (Node c : n.children()) {
+                // Check inner conditions. The value takes the lower reachable type.
+                VariableDefinition.Reachable next = checkCondition(c);
+                reachable = StaticTaintAnalysis.getConditionalReachability(reachable, next);
             }
         }
-        for (Node c : n.children()) {
-            checkCondition(c, conditionalValue);
-        }
+        return reachable;
     }
 
     private void doSTAConditional(Node n) {
         // Remember the context of the outer scope.
         VariableDefinition.Reachable parentContext = result.conditionContext;
-        Pair<Boolean, Boolean> conditionalValue = new Pair<Boolean, Boolean>(false, false);
 
         // Get the node where the expression is stored.
         Node condition = NodeUtil.getConditionExpression(n);
-
-        if (condition != null) {
-
-            checkCondition(condition, conditionalValue);
-            if (conditionalValue.first) {
-                // If the expression evaluates to true we always reach the body.
-                result.conditionContext = VariableDefinition.Reachable.Always;
-            } else {
-                if (conditionalValue.second) {
-                    // We are not sure if we can reach it.
-                    result.conditionContext = VariableDefinition.Reachable.Maybe;
-                } else {
-                    // If it evaluates to false we never can reach it.
-                    result.conditionContext = VariableDefinition.Reachable.Never;
-                }
-            }
-        } else {
-            // The condition is empty, we can always reach the body.
-            result.conditionContext = VariableDefinition.Reachable.Always;
-        }
+        result.conditionContext = checkCondition(condition);
 
         // When we enter the condition we mark all already defined
         // variables with the conditional context.
-        for(VariableDefinition var : result.definitions) {
+        for (VariableDefinition var : result.definitions) {
             var.reachable = result.conditionContext;
         }
 
-        // If the block is maybe or definitely reachable.
+        // If the block is maybe or always reachable.
         if (!result.isUnReachable()) {
-            if(n.isIf()) {
+            if (n.isIf()) {
                 for (Node c : n.children()) {
                     // Do not check the condition but only blocks.
                     if (!c.equals(n.getFirstChild())) {
@@ -401,7 +375,7 @@ class StaticTaintAnalysis
         }
         // Reset the conditional contexts.
         result.conditionContext = parentContext;
-        for(VariableDefinition var : result.definitions) {
+        for (VariableDefinition var : result.definitions) {
             var.reachable = result.conditionContext;
         }
     }
@@ -413,22 +387,22 @@ class StaticTaintAnalysis
 
         // When we enter the condition we mark all already defined
         // variables with the conditional context.
-        for(VariableDefinition var : result.definitions) {
+        for (VariableDefinition var : result.definitions) {
             var.reachable = result.conditionContext;
         }
 
         for (Node c : n.children()) {
-            if(c != n.getFirstChild()) {
-                if(c.isCase()) {
+            if (c != n.getFirstChild()) {
+                if (c.isCase()) {
                     doSTAChildren(c.getSecondChild());
-                } else if(c.isDefaultCase()) {
+                } else if (c.isDefaultCase()) {
                     doSTAChildren(c.getFirstChild());
                 }
             }
         }
         // Reset the conditional contexts.
         result.conditionContext = parentContext;
-        for(VariableDefinition var : result.definitions) {
+        for (VariableDefinition var : result.definitions) {
             var.reachable = result.conditionContext;
         }
     }
