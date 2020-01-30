@@ -12,8 +12,11 @@ import java.nio.file.Paths;
 class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallback {
 
     /**
-     * Stores the result of a lattice when the scope is left.
-     * Remembers if a variable is may be tainted or must be tainted.
+     * When a scope is left the result is stored in a JsonObject for that specific scope.
+     * When the analysis is finished all JsonObjects are combined and written to the output
+     * file. This file is stored in the same directory as the input file. As long as the
+     * input file is a .js file the output file will have the same name with a _out.json
+     * postfix.
      */
     private static class STAResult {
         JsonObject json;
@@ -22,14 +25,20 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
             json = new JsonObject();
         }
 
+        /**
+         * Write the contents of the JsonObject into the output file.
+         * @param name  String that contains the name of the input file.
+         */
         void writeRes(String name) {
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
+
+            // Gson writes arrays into multiple lines, so we remove the blanks and newlines.
             String formatted = gson.toJson(json)
                     .replaceAll("\\[\\n\\s+", "[")
                     .replaceAll("\",\\n\\s+", "\", ")
                     .replaceAll("\\n\\s+]", "]");
-            try {
 
+            try {
                 Files.writeString(
                         Paths.get(name.replace(".js", "_out.json")),
                         formatted);
@@ -48,6 +57,11 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
         this.result = new STAResult();
     }
 
+    /**
+     * Runs the analysis.
+     * @param externs Top of external JS tree
+     * @param root Top of JS tree
+     */
     @Override
     public void process(Node externs, Node root) {
         NodeTraversal nt = new NodeTraversal(
@@ -64,6 +78,10 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
         return !n.isScript() || !t.getInput().isExtern();
     }
 
+    /**
+     * Runs the STA for each function that is found in the input.
+     * @param t The root node.
+     */
     @Override
     public void enterScope(NodeTraversal t) {
         if (t.inGlobalScope()) {

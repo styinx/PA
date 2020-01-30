@@ -24,14 +24,14 @@ class StaticTaintAnalysis
      * If the variable does not have a parent it is considered a root.
      */
     public static final class VariableDefinition implements Comparable<VariableDefinition> {
-        enum Tainted {No, May, Must}            // Defines if the variable leaks.
-
-        enum Reachable {Always, Maybe, Never}   // Defines if the variable is declared inside a conditional.
+        // Defines if the variable leaks.
+        enum Tainted {No, May, Must}
+        // Defines if the variable is declared inside a conditional.
+        enum Reachable {Always, Maybe, Never}
 
         private Node node;
         private LinkedHashSet<VariableDefinition> dependent;
         private Boolean source;
-        private Boolean sink;
         private Tainted tainted;
         private Reachable reachable;
 
@@ -39,22 +39,14 @@ class StaticTaintAnalysis
             this.node = n;
             this.dependent = new LinkedHashSet<VariableDefinition>();
             this.source = false;
-            this.sink = false;
             this.tainted = Tainted.No;
             this.reachable = Reachable.Always;
         }
 
-        private Tainted getTaintedState() {
-            switch (reachable) {
-                case Always:
-                    return Tainted.Must;
-                case Maybe:
-                    return Tainted.May;
-                default:
-                    return Tainted.No;
-            }
-        }
-
+        /**
+         * Name of the variable.
+         * @return the name of the variable with line number.
+         */
         private String getName() {
             // Should never happen that the node is null.
             if (node != null) {
@@ -63,9 +55,16 @@ class StaticTaintAnalysis
                 }
                 return node.toString() + "@" + node.getLineno();
             }
-            return "~";
+            return "";
         }
 
+        /**
+         * We add a variable as dependency.
+         * For example in {@code var x = y;} the variable x is depedent on y.
+         * If y is already dependent on another variable, x is assigned all the
+         * dependencies of y.
+         * @param other The dependent variable.
+         */
         private void addDependency(VariableDefinition other) {
             if (other.dependent.isEmpty()) {
                 dependent.add(other);
@@ -74,6 +73,12 @@ class StaticTaintAnalysis
             }
         }
 
+        /**
+         * This function should be used when a sink is reached.
+         * Based on the given reachability we can decide if the variable
+         * may or must be tainted.
+         * @param reachability The statements reachability.
+         */
         private void setTaintedState(Reachable reachability) {
             if(reachability == Reachable.Always) {
                 tainted = Tainted.Must;
@@ -82,6 +87,11 @@ class StaticTaintAnalysis
             }
         }
 
+        /**
+         * Used for ordering the variables in a Collection based on the line number.
+         * @param o The variable to compare to.
+         * @return if the other variable is bigger (>0) or equal or samller (<= 0).
+         */
         @Override
         public int compareTo(VariableDefinition o) {
             if (node != null && o.node != null) {
@@ -92,7 +102,9 @@ class StaticTaintAnalysis
     }
 
     /**
-     * Defines a function scope that holds a collection of variables.
+     * Stores the name of a function and definitions of variables inside this function.
+     * It also remembers the current variables context (see paper, {@code var x = y;}
+     * y is in the context of x) and the conditional context.
      */
     public static final class STAScope implements LatticeElement {
         private String name;
@@ -107,10 +119,19 @@ class StaticTaintAnalysis
             this.definitions = new LinkedHashSet<VariableDefinition>();
         }
 
+        /**
+         * Helps readability. If the current conditional context is not reachable we could go over it.
+         * @return true if the current condition is not reachable.
+         */
         boolean isUnReachable() {
             return conditionContext == VariableDefinition.Reachable.Never;
         }
 
+        /**
+         * Returns a variable definition that matches the name of the given node.
+         * @param n The node of the variable that is searched for.
+         * @return a variable definition if the variable exists, otherwise a new definition.
+         */
         VariableDefinition findVar(Node n) {
             if (n != null && n.isName()) {
                 for (VariableDefinition var : definitions) {
@@ -129,7 +150,7 @@ class StaticTaintAnalysis
 
     /**
      * Performs a join of two STALattices and combines their contents.
-     * This means if they have the same scope (function name) the variables are joined.
+     * This means if they have the same scope the variables are joined.
      */
     private static class STAJoin extends JoinOp.BinaryJoinOp<STAScope> {
         @Override
@@ -147,11 +168,8 @@ class StaticTaintAnalysis
 
     /**
      * Constructs a data flow analysis.
-     *
      * @param cfg The control flow graph object that this object performs
-     *            on. Modification of the graph requires a separate call to
-     *            {@link #analyze()}.
-     * @see #analyze()
+     *            on.
      */
     StaticTaintAnalysis(ControlFlowGraph<Node> cfg) {
         super(cfg, new STAJoin());
@@ -178,6 +196,11 @@ class StaticTaintAnalysis
         return result;
     }
 
+    /**
+     * This function is called from the compiler pass and stores the variables
+     * with a tainted state inside a json object.
+     * @param json The JsonObject where the result should be stored.
+     */
     void saveResult(JsonObject json) {
         JsonObject info = new JsonObject();
         JsonArray may = new JsonArray();
@@ -197,6 +220,12 @@ class StaticTaintAnalysis
         info.add("sources_that_may_reach_sinks", may);
     }
 
+    /**
+     * Recursively evaluates the subtree of a condition and returns the reachability.
+     * @param first Left hand side of the condition.
+     * @param second Right hand side of the condition.
+     * @return if the conditions block is Always, Mabe, or never reachable.
+     */
     private static VariableDefinition.Reachable getConditionalReachability(
             VariableDefinition.Reachable first,
             VariableDefinition.Reachable second) {
@@ -223,6 +252,11 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * The inspected node is variable. A new variable definition is added for each
+     * introduced variable. The current functions variable context is also set.
+     * @param n The Node to inspect.
+     */
     private void doSTAVar(Node n) {
         // In the case that we have multiple variables in one statement.
         for (Node c : n.children()) {
@@ -237,6 +271,11 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * If an assignment outside of a variable declaration happens it is required
+     * to update the assigned variables dependencies.
+     * @param n The node to inspect.
+     */
     private void doSTAAssign(Node n) {
         if (n.hasChildren()) {
             // If we have a variable to variable assignment.
@@ -255,6 +294,13 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * If a variable appears inside an assignment (result.varContext is not be empty)
+     * the variables dependencies on the left side must be updated.
+     * This is a special case of {@see doSTAAssign} and {@see doSTAVar} since
+     * it includes OBJECT_LIT or ARRAY_LIT tokens.
+     * @param n The node to inspect.
+     */
     private void doSTAName(Node n) {
         if (result.varContext != null) {
             VariableDefinition var = result.findVar(n);
@@ -265,6 +311,11 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * A function is called. We check the type of the function an whether it is
+     * of importance to use.
+     * @param n The node to inspect.
+     */
     private void doSTACall(Node n) {
         // Source
         if (n.hasOneChild() && n.getFirstChild().isName()) {
@@ -282,8 +333,6 @@ class StaticTaintAnalysis
                 if (n.getSecondChild().isName()) {
                     VariableDefinition var = result.findVar(n.getSecondChild());
 
-                    //  Set as sink
-                    var.sink = true;
                     // If it was a source before we mark it as tainted.
                     if (var.source) {
                         // Set the tainted state based on the reachability.
@@ -316,7 +365,9 @@ class StaticTaintAnalysis
     }
 
     /**
-     * @param n Node
+     * Helper function that returns the reachability of a condition.
+     * @param n The node to inspect.
+     * @return the reachability of the condition body.
      */
     private VariableDefinition.Reachable checkCondition(Node n) {
         VariableDefinition.Reachable reachable = VariableDefinition.Reachable.Always;
@@ -343,6 +394,15 @@ class StaticTaintAnalysis
         return reachable;
     }
 
+    /**
+     * The token represents an if condition or a loop. We check the reachability of the
+     * condition. If it is maybe or always reachable we check for the nested statements.
+     * The scopes conditional context is also altered.
+     * We also mark the already defined variables with the same reachability class.
+     * At the exit of the scope we reset the conditional context and the variables
+     * reachability class to the reachability of the outer scope.
+     * @param n The node to inspect.
+     */
     private void doSTAConditional(Node n) {
         // Remember the context of the outer scope.
         VariableDefinition.Reachable parentContext = result.conditionContext;
@@ -357,7 +417,7 @@ class StaticTaintAnalysis
             var.reachable = result.conditionContext;
         }
 
-        // If the block is maybe or always reachable.
+        // If the block is maybe or always reachable we proceed.
         if (!result.isUnReachable()) {
             if (n.isIf()) {
                 for (Node c : n.children()) {
@@ -380,6 +440,13 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * If a case of a switch contains a variable name we always assume it is
+     * maybe reachable since we can not evaluate the condition.
+     * We also set and reset the conditional context and the reachability classes
+     * of the variables that are currently defined.
+     * @param n The node to inspect.
+     */
     private void doSTASwitch(Node n) {
         // Remember the context of the outer scope.
         VariableDefinition.Reachable parentContext = result.conditionContext;
@@ -407,12 +474,20 @@ class StaticTaintAnalysis
         }
     }
 
+    /**
+     * Do an STA of a nodes children.
+     * @param n The node which children we want to analyze.
+     */
     private void doSTAChildren(Node n) {
         for (Node c : n.children()) {
             doSTA(c);
         }
     }
 
+    /**
+     * The entry point of a STA.
+     * @param n The node we inspect.
+     */
     public void doSTA(Node n) {
         if (n == null) {
             return;
