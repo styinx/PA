@@ -22,18 +22,21 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
             json = new JsonObject();
         }
 
-        void writeRes() {
+        void writeRes(String name) {
             Gson gson = new GsonBuilder().setPrettyPrinting().create();
-            System.out.println("\n" + gson.toJson(json) + "\n");
-            System.out.println("\n" + json.toString() + "\n");
-        try {
-            Files.writeString(
-                    Paths.get("file.js".replace(".js", "_out.js")),
-                    gson.toJson(json));
+            String formatted = gson.toJson(json)
+                    .replaceAll("\\[\\n\\s+", "[")
+                    .replaceAll("\",\\n\\s+", "\", ")
+                    .replaceAll("\\n\\s+]", "]");
+            try {
 
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+                Files.writeString(
+                        Paths.get(name.replace(".js", "_out.json")),
+                        formatted);
+
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -47,12 +50,13 @@ class StaticTaintAnalysisPass implements CompilerPass, NodeTraversal.ScopedCallb
 
     @Override
     public void process(Node externs, Node root) {
-        (new NodeTraversal(
+        NodeTraversal nt = new NodeTraversal(
                 compiler,
                 this,
-                new SyntacticScopeCreator(compiler))).traverseRoots(externs, root);
+                new SyntacticScopeCreator(compiler));
 
-        result.writeRes();
+        nt.traverseRoots(externs, root);
+        result.writeRes(nt.getSourceName());
     }
 
     @Override
